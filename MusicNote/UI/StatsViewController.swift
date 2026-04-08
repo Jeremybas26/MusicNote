@@ -9,9 +9,10 @@ import UIKit
 
 // MARK: - Stats Dashboard (Grid)
 class StatsViewController: UIViewController, UICollectionViewDelegate {
-    
+
+    private var gradientLayer = CAGradientLayer()
     private var scalesIndexPaths: [IndexPath] = []
-    
+
     // MARK: - Accuracy Color Helpers
     private func pastelAccuracyColor(_ accuracy: Double) -> UIColor {
         switch accuracy {
@@ -23,7 +24,7 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
             return UIColor(red: 0.80, green: 0.93, blue: 0.85, alpha: 1)
         }
     }
-    
+
     private func pastelAccuracyBorderColor(_ accuracy: Double) -> UIColor {
         switch accuracy {
         case ..<0.60:
@@ -34,7 +35,7 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
             return UIColor(red: 0.35, green: 0.70, blue: 0.50, alpha: 1)
         }
     }
-    
+
     private enum Section: Int, CaseIterable {
         case kpis
         case notes
@@ -44,9 +45,9 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
 
         var title: String? {
             switch self {
-            case .notes: return "Notes Stats"
-            case .scales: return "Scales Stats"
-            case .chordNumerals: return "Chord Stats"
+            case .notes: return "Notes"
+            case .scales: return "Scales"
+            case .chordNumerals: return "Chords"
             case .chordInversions: return nil
             default: return nil
             }
@@ -64,18 +65,29 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
         case lockedScaleStats
         case lockedChordStats
     }
-    
+
     private let trainer = NotesTrainer.shared
     private var letters: [String] = []
-    
+
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGray6
-        title = "Your Stats"
-        
+        setupGradientBackground()
+        title = "Practice Modes Stats"
+        navigationController?.navigationBar.prefersLargeTitles = true
+        navigationItem.largeTitleDisplayMode = .always
+
+        // Make nav bar blend with gradient
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+        appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
+        navigationController?.navigationBar.standardAppearance = appearance
+        navigationController?.navigationBar.scrollEdgeAppearance = appearance
+        navigationController?.navigationBar.tintColor = .white
+
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: makeLayout())
         collectionView.register(
             UICollectionViewCell.self,
@@ -91,23 +103,81 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        
+
         configureDataSource()
         reloadData()
         RewardedAdManager.shared.load()
     }
-    
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        gradientLayer.frame = view.bounds
+    }
+
+    private func setupGradientBackground() {
+        gradientLayer.colors = [
+            UIColor(red: 0.07, green: 0.10, blue: 0.16, alpha: 1).cgColor,
+            UIColor(red: 0.12, green: 0.14, blue: 0.20, alpha: 1).cgColor
+        ]
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        view.layer.insertSublayer(gradientLayer, at: 0)
+    }
+
     // MARK: - Collection View Delegate
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
 
         switch item {
 
-        case .scale:
-            let unlocked = ScaleStatsUnlockManager.shared.isUnlockedToday
-            if !unlocked {
+        case .note(let letter):
+            let stat = trainer.stat(for: letter)
+            let detailVC = NoteProgressDetailViewController(
+                itemTitle: letter,
+                sectionTitle: "Note Progress",
+                correct: stat.correct,
+                total: stat.total,
+                letter: letter
+            )
+            navigationController?.pushViewController(detailVC, animated: true)
+
+        case .scale(let name):
+            let unlocked = ScaleStatsUnlockManager.shared.isUnlockedToday || SubscriptionManager.shared.isPro
+            if unlocked {
+                let stat = ScaleStatsManager.shared.stat(for: name)
+                let detailVC = NoteProgressDetailViewController(
+                    itemTitle: name,
+                    sectionTitle: "Scale Progress",
+                    correct: stat.correct,
+                    total: stat.total,
+                    letter: nil
+                )
+                navigationController?.pushViewController(detailVC, animated: true)
+            } else {
                 presentScaleUnlockSheet(from: collectionView)
             }
+
+        case .chordNumeral(let numeral):
+            let stat = ChordStatsManager.shared.statForNumeral(numeral)
+            let detailVC = NoteProgressDetailViewController(
+                itemTitle: numeral,
+                sectionTitle: "Chord Progress",
+                correct: stat.correct,
+                total: stat.total,
+                letter: nil
+            )
+            navigationController?.pushViewController(detailVC, animated: true)
+
+        case .chordInversion(let inversion):
+            let stat = ChordStatsManager.shared.statForInversion(inversion)
+            let detailVC = NoteProgressDetailViewController(
+                itemTitle: inversion.rawValue,
+                sectionTitle: "Inversion Progress",
+                correct: stat.correct,
+                total: stat.total,
+                letter: nil
+            )
+            navigationController?.pushViewController(detailVC, animated: true)
 
         case .lockedScaleStats:
             RewardedAdManager.shared.show(
@@ -149,9 +219,7 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
             break
         }
     }
-    
-    // (applyScaleLockUI and updateScalesLockState removed)
-    
+
     private func configureDataSource() {
         let kpiReg = UICollectionView.CellRegistration<UICollectionViewCell, KPIType> { [weak self] cell, _, kpi in
             self?.configureTile(cell: cell, title: kpi.title, subtitle: self?.kpiValue(for: kpi) ?? "")
@@ -197,14 +265,12 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
                     withReuseIdentifier: "Cell",
                     for: indexPath
                 )
-
                 (self as? StatsViewController)?.configureTile(
                     cell: cell,
                     title: "Unlock Scale Stats",
                     subtitle: "Watch 1 ad to unlock for today",
                     accuracy: nil
                 )
-
                 return cell
             case .chordNumeral(let numeral):
                 let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "Cell", for: indexPath)
@@ -243,14 +309,12 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
                     withReuseIdentifier: "Cell",
                     for: indexPath
                 )
-
                 (self as? StatsViewController)?.configureTile(
                     cell: cell,
                     title: "Unlock Chord Stats",
                     subtitle: "Watch 1 ad to unlock for today",
                     accuracy: nil
                 )
-
                 return cell
             }
         }
@@ -297,7 +361,6 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
                 numerals.map { .chordNumeral($0) },
                 toSection: .chordNumerals
             )
-
             snap.appendItems(
                 inversions.map { .chordInversion($0) },
                 toSection: .chordInversions
@@ -306,7 +369,6 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
             snap.appendItems([.lockedChordStats], toSection: .chordNumerals)
         }
 
-        // Track index paths for scale cells (no longer needed for lock overlays, but kept for consistency if needed elsewhere)
         scalesIndexPaths = scaleNames.indices.map {
             IndexPath(item: $0, section: Section.scales.rawValue)
         }
@@ -323,7 +385,7 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
         cell.contentView.subviews.forEach { $0.removeFromSuperview() }
         let container = UIView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        
+
         if let acc = accuracy {
             container.backgroundColor = pastelAccuracyColor(acc)
             container.layer.borderWidth = 3
@@ -333,23 +395,39 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
             container.layer.borderWidth = 1
             container.layer.borderColor = UIColor.white.withAlphaComponent(0.35).cgColor
         }
-        
+
         container.layer.cornerRadius = 14
         container.layer.masksToBounds = true
         let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         blur.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(blur)
-        let titleLabel = UILabel(); titleLabel.font = .systemFont(ofSize: 18, weight: .semibold); titleLabel.text = title
-        let subtitleLabel = UILabel(); subtitleLabel.font = .systemFont(ofSize: 13); subtitleLabel.textColor = .secondaryLabel; subtitleLabel.text = subtitle; subtitleLabel.numberOfLines = 2
-        let stack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel]); stack.axis = .vertical; stack.spacing = 6; stack.translatesAutoresizingMaskIntoConstraints = false
-        cell.contentView.addSubview(container); container.addSubview(stack)
+        let titleLabel = UILabel()
+        titleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        titleLabel.text = title
+        let subtitleLabel = UILabel()
+        subtitleLabel.font = .systemFont(ofSize: 13)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.text = subtitle
+        subtitleLabel.numberOfLines = 2
+        let stack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
+        stack.axis = .vertical
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(container)
+        container.addSubview(stack)
         NSLayoutConstraint.activate([
             container.topAnchor.constraint(equalTo: cell.contentView.topAnchor),
             container.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor),
             container.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor),
             container.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor),
-            blur.topAnchor.constraint(equalTo: container.topAnchor), blur.leadingAnchor.constraint(equalTo: container.leadingAnchor), blur.trailingAnchor.constraint(equalTo: container.trailingAnchor), blur.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12), stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12), stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12), stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -12)
+            blur.topAnchor.constraint(equalTo: container.topAnchor),
+            blur.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            blur.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            blur.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -12)
         ])
     }
 
@@ -373,16 +451,11 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
         return "\(pct)  •  \(s.correct)/\(s.total)"
     }
 
-    // Removed openGraph and Progress graph feature
-
-
-    
-    
     private func makeLayout() -> UICollectionViewLayout {
         UICollectionViewCompositionalLayout { sectionIndex, _ in
             guard let sec = Section(rawValue: sectionIndex) else { return nil }
             func headerItem() -> NSCollectionLayoutBoundarySupplementaryItem {
-                let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(32))
+                let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(44))
                 return .init(layoutSize: size, elementKind: UICollectionView.elementKindSectionHeader, alignment: .top)
             }
             switch sec {
@@ -390,63 +463,65 @@ class StatsViewController: UIViewController, UICollectionViewDelegate {
                 let item = NSCollectionLayoutItem(
                     layoutSize: .init(
                         widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .estimated(80)
+                        heightDimension: .estimated(90)
                     )
                 )
-                item.contentInsets = .init(top: 8, leading: 8, bottom: 8, trailing: 8)
+                item.contentInsets = .init(top: 10, leading: 10, bottom: 10, trailing: 10)
 
                 let group = NSCollectionLayoutGroup.horizontal(
                     layoutSize: .init(
                         widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .estimated(100)
+                        heightDimension: .estimated(110)
                     ),
                     subitem: item,
                     count: 3
                 )
 
                 let section = NSCollectionLayoutSection(group: group)
-                section.contentInsets = .init(top: 4, leading: 8, bottom: 8, trailing: 8)
+                section.contentInsets = .init(top: 8, leading: 10, bottom: 16, trailing: 10)
                 return section
 
             case .notes, .scales, .chordNumerals, .chordInversions:
                 let item = NSCollectionLayoutItem(
                     layoutSize: .init(
                         widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .estimated(90)
+                        heightDimension: .estimated(100)
                     )
                 )
-                item.contentInsets = .init(top: 8, leading: 8, bottom: 8, trailing: 8)
+                item.contentInsets = .init(top: 10, leading: 10, bottom: 10, trailing: 10)
 
                 let group = NSCollectionLayoutGroup.horizontal(
                     layoutSize: .init(
                         widthDimension: .fractionalWidth(1.0),
-                        heightDimension: .estimated(100)
+                        heightDimension: .estimated(110)
                     ),
                     subitem: item,
                     count: 3
                 )
 
                 let section = NSCollectionLayoutSection(group: group)
-                section.contentInsets = .init(top: 4, leading: 8, bottom: 8, trailing: 8)
+                section.contentInsets = .init(top: 8, leading: 10, bottom: 16, trailing: 10)
                 section.boundarySupplementaryItems = [headerItem()]
                 return section
             }
         }
     }
-    
-    
-    // MARK: - Stats Section Header (Reusable for Dashboard)
+
+
+    // MARK: - Stats Section Header
     final class StatsSectionHeader: UICollectionReusableView {
         let titleLabel = UILabel()
         override init(frame: CGRect) {
             super.init(frame: frame)
-            titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
-            titleLabel.textColor = .black
+            titleLabel.font = .systemFont(ofSize: 20, weight: .bold)
+            titleLabel.textColor = .label
+            titleLabel.textAlignment = .center
             addSubview(titleLabel)
             titleLabel.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
-                titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+                titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
                 titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+                titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 16),
                 titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16)
             ])
         }
@@ -472,13 +547,7 @@ extension StatsViewController {
                 onReward: { [weak self] in
                     guard let self else { return }
                     ScaleStatsUnlockManager.shared.unlockForToday()
-
-                    // Fully refresh scale cells so lock overlays disappear
-                    ScaleStatsUnlockManager.shared.unlockForToday()
-
                     var snapshot = self.dataSource.snapshot()
-
-                    // Re-apply the SAME snapshot to force reconfiguration
                     self.dataSource.apply(snapshot, animatingDifferences: true)
                 },
                 onFail: { [weak self] in
@@ -495,7 +564,6 @@ extension StatsViewController {
 
         ac.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 
-        // iPad safety
         if let pop = ac.popoverPresentationController {
             pop.sourceView = sourceView
             pop.sourceRect = CGRect(

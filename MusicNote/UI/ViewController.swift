@@ -351,16 +351,8 @@ class ViewController: UIViewController {
 
     // MARK: - Navigation
     @objc private func openSettings() {
-        let settingsVC = SettingsViewController()
-        if let nav = navigationController {
-            nav.pushViewController(settingsVC, animated: true)
-        } else {
-            let nav = UINavigationController(rootViewController: settingsVC)
-            nav.modalPresentationStyle = .fullScreen
-            present(nav, animated: true)
-        }
+        tabBarController?.selectedIndex = 2
     }
-
 
     @objc private func openLearn() {
         let learnVC = LearningViewController()
@@ -374,14 +366,7 @@ class ViewController: UIViewController {
     }
 
     @objc private func openStats() {
-        let statsVC = StatsViewController()
-        if let nav = navigationController {
-            nav.pushViewController(statsVC, animated: true)
-        } else {
-            let nav = UINavigationController(rootViewController: statsVC)
-            nav.modalPresentationStyle = .fullScreen
-            present(nav, animated: true)
-        }
+        tabBarController?.selectedIndex = 1
     }
 }
  

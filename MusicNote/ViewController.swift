@@ -376,14 +376,7 @@ class ViewController: UIViewController {
 
     // MARK: - Navigation
     @objc private func openSettings() {
-        let settingsVC = SettingsViewController()
-        if let nav = navigationController {
-            nav.pushViewController(settingsVC, animated: true)
-        } else {
-            let nav = UINavigationController(rootViewController: settingsVC)
-            nav.modalPresentationStyle = .fullScreen
-            present(nav, animated: true)
-        }
+        tabBarController?.selectedIndex = 2
     }
 
     @objc private func openPractice() {
@@ -425,10 +418,7 @@ class ViewController: UIViewController {
     }
 
     @objc private func openStats() {
-        let statsVC = StatsViewController()
-        let nav = UINavigationController(rootViewController: statsVC)
-        nav.modalPresentationStyle = .fullScreen
-        present(nav, animated: true)
+        tabBarController?.selectedIndex = 1
     }
     
     @objc private func openIntervals() {
@@ -1275,10 +1265,14 @@ extension UIButton {
     func applyLiquidGlass() {
         // ─── Native Liquid‑Glass on iOS 19+ ─────────────────────────────
         if #available(iOS 19.0, *) {
+            let existingTitle = title(for: .normal)
+            let existingColor = tintColor
             var cfg = UIButton.Configuration.plain()
             cfg.cornerStyle = .capsule
             cfg.background.strokeColor = UIColor.white.withAlphaComponent(0.25)
             cfg.background.strokeWidth = 1
+            cfg.title = existingTitle
+            cfg.baseForegroundColor = existingColor
             configuration = cfg
             return
         }
