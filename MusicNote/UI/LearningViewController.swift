@@ -79,14 +79,9 @@ class LearningViewController: UIViewController {
     }
 
     // MARK: - Input Mode State and Views
-    private enum PracticeInputMode {
-        case buttons
-        case piano
-    }
+    var inputMode: PracticeInputMode = .buttons
 
-    private var inputMode: PracticeInputMode = .buttons
-
-    private let inputToggleButton: UIButton = {
+    let inputToggleButton: UIButton = {
         let b = UIButton(type: .system)
         b.setTitle("🎹 Piano", for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -95,7 +90,7 @@ class LearningViewController: UIViewController {
         return b
     }()
 
-    private let pianoView = PianoKeyboardView()
+    let pianoView = PianoKeyboardView()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -143,7 +138,7 @@ class LearningViewController: UIViewController {
         practiceHeader.updateStreak(DailyStreakManager.shared.current)
 
         NSLayoutConstraint.activate([
-            practiceHeader.topAnchor.constraint(equalTo: view.topAnchor, constant: 64),
+            practiceHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             practiceHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             practiceHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
@@ -202,14 +197,13 @@ class LearningViewController: UIViewController {
         view.addSubview(pianoView)
         pianoView.translatesAutoresizingMaskIntoConstraints = false
         pianoView.isHidden = true
-        pianoView.onNotePressed = { [weak self] note in
-            self?.handlePianoNote(note)
-        }
+        setupPianoCallbacks()
 
         NSLayoutConstraint.activate([
             inputToggleButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             inputToggleButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
             inputToggleButton.heightAnchor.constraint(equalToConstant: 36),
+            inputToggleButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
 
             // pianoView.topAnchor.constraint(equalTo: imageContainer.bottomAnchor, constant: 32), // Moved to layoutUI()
             pianoView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -718,47 +712,16 @@ fileprivate extension String {
 }
 
 
-// MARK: - Input Mode Toggle Logic
+// MARK: - Input Mode Toggle
 extension LearningViewController {
     @objc private func inputToggleTapped(_ sender: UIButton) {
-        Task { @MainActor in
-            if SubscriptionManager.shared.isPro ||
-               PianoUnlockManager.shared.isUnlockedToday {
-
-                switchInputMode()
-                return
-            }
-
-            RewardedAdManager.shared.show(
-                from: self,
-                onReward: { [weak self] in
-                    PianoUnlockManager.shared.unlockForToday()
-                    self?.switchInputMode()
-                },
-                onFail: { [weak self] in
-                    let alert = UIAlertController(
-                        title: "Ad not ready",
-                        message: "Try again in a moment.",
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: "OK", style: .default))
-                    self?.present(alert, animated: true)
-                }
-            )
-        }
+        handleInputToggleTapped()
     }
+}
 
-    private func switchInputMode() {
-        if inputMode == .buttons {
-            inputMode = .piano
-            stackContainer.isHidden = true
-            pianoView.isHidden = false
-            inputToggleButton.setTitle("🔘 Buttons", for: .normal)
-        } else {
-            inputMode = .buttons
-            pianoView.isHidden = true
-            stackContainer.isHidden = false
-            inputToggleButton.setTitle("🎹 Piano", for: .normal)
-        }
-    }
+// MARK: - PianoInputHandling
+extension LearningViewController: PianoInputHandling {
+    func pianoNotePressed(_ note: String) { handlePianoNote(note) }
+    func showPracticeButtons() { stackContainer.isHidden = false }
+    func hidePracticeButtons() { stackContainer.isHidden = true }
 }

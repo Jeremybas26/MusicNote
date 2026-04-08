@@ -410,10 +410,17 @@ extension UIButton {
     func applyLiquidGlass() {
         // ─── Native Liquid‑Glass on iOS 19+ ─────────────────────────────
         if #available(iOS 19.0, *) {
+            // Capture legacy values before the configuration system takes over,
+            // since UIButton.Configuration rendering ignores setTitle(_:for:).
+            let existingTitle = title(for: .normal)
+            let existingColor = tintColor
+
             var cfg = UIButton.Configuration.plain()
             cfg.cornerStyle = .capsule
             cfg.background.strokeColor = UIColor.white.withAlphaComponent(0.25)
             cfg.background.strokeWidth = 1
+            cfg.title = existingTitle
+            cfg.baseForegroundColor = existingColor
             configuration = cfg
             return
         }

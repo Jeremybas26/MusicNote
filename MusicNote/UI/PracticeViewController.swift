@@ -70,19 +70,13 @@ final class PracticeScalesViewController: UIViewController {
         let l = UILabel()
         l.font = UIFont.monospacedDigitSystemFont(ofSize: 18, weight: .semibold)
         l.text = "0/0"
-        l.textAlignment = .right
         return l
     }()
 
     // MARK: - Piano/Buttons Input Mode
-    private enum PracticeInputMode {
-        case buttons
-        case piano
-    }
+    var inputMode: PracticeInputMode = .buttons
 
-    private var inputMode: PracticeInputMode = .buttons
-
-    private let inputToggleButton: UIButton = {
+    let inputToggleButton: UIButton = {
         let b = UIButton(type: .system)
         b.setTitle("🎹 Piano", for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -92,7 +86,7 @@ final class PracticeScalesViewController: UIViewController {
         return b
     }()
 
-    private let pianoView = PianoKeyboardView()
+    let pianoView = PianoKeyboardView()
 
     // --- Piano scale tracking state ---
     private var requiredScaleNotes: Set<String> = []
@@ -145,9 +139,7 @@ final class PracticeScalesViewController: UIViewController {
         }
 
         setupUI()
-        pianoView.onNotePressed = { [weak self] note in
-            self?.handlePianoScaleNote(note)
-        }
+        setupPianoCallbacks()
         loadScale()
         updateScaleScoreLabel()
     }
@@ -193,7 +185,7 @@ final class PracticeScalesViewController: UIViewController {
         view.addSubview(pianoView)
 
         NSLayoutConstraint.activate([
-            practiceHeader.topAnchor.constraint(equalTo: view.topAnchor, constant: 64),
+            practiceHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             practiceHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             practiceHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
@@ -227,6 +219,8 @@ final class PracticeScalesViewController: UIViewController {
 
             inputToggleButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             inputToggleButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            inputToggleButton.heightAnchor.constraint(equalToConstant: 36),
+            inputToggleButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
 
             pianoView.topAnchor.constraint(equalTo: imageContainer.bottomAnchor, constant: 24),
             pianoView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -493,59 +487,24 @@ final class PracticeScalesViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         intervalController.stop()
-        // Reset input mode to buttons when leaving
-        inputMode = .buttons
-        pianoView.isHidden = true
-        buttonsStack.isHidden = false
-        inputToggleButton.setTitle("🎹 Piano", for: .normal)
+        if inputMode == .piano { switchInputMode() }
     }
 
     @objc private func closeSelf() { dismiss(animated: true) }
 }
 
+// MARK: - Input Mode Toggle
 extension PracticeScalesViewController {
-
     @objc private func inputToggleTapped() {
-        Task { @MainActor in
-            if SubscriptionManager.shared.isPro ||
-               PianoUnlockManager.shared.isUnlockedToday {
-
-                self.switchInputMode()
-                return
-            }
-
-            RewardedAdManager.shared.show(
-                from: self,
-                onReward: { [weak self] in
-                    PianoUnlockManager.shared.unlockForToday()
-                    self?.switchInputMode()
-                },
-                onFail: { [weak self] in
-                    let alert = UIAlertController(
-                        title: "Ad not ready",
-                        message: "Try again in a moment.",
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: "OK", style: .default))
-                    self?.present(alert, animated: true)
-                }
-            )
-        }
+        handleInputToggleTapped()
     }
+}
 
-    private func switchInputMode() {
-        if inputMode == .buttons {
-            inputMode = .piano
-            buttonsStack.isHidden = true
-            pianoView.isHidden = false
-            inputToggleButton.setTitle("🔘 Buttons", for: .normal)
-        } else {
-            inputMode = .buttons
-            pianoView.isHidden = true
-            buttonsStack.isHidden = false
-            inputToggleButton.setTitle("🎹 Piano", for: .normal)
-        }
-    }
+// MARK: - PianoInputHandling
+extension PracticeScalesViewController: PianoInputHandling {
+    func pianoNotePressed(_ note: String) { handlePianoScaleNote(note) }
+    func showPracticeButtons() { buttonsStack.isHidden = false }
+    func hidePracticeButtons() { buttonsStack.isHidden = true }
 }
 
 // MARK: - Piano scale input handlers
@@ -584,42 +543,6 @@ extension PracticeScalesViewController {
     }
 }
 
-// MARK: - Piano scale input handlers
-extension PracticeScalesViewController {
-
-    private func normalize(_ note: String) -> String {
-        let cleaned = note
-            .replacingOccurrences(of: "♯", with: "#")
-            .replacingOccurrences(of: "♭", with: "b")
-            .replacingOccurrences(of: "0", with: "")
-            .replacingOccurrences(of: "1", with: "")
-            .replacingOccurrences(of: "2", with: "")
-            .replacingOccurrences(of: "3", with: "")
-            .replacingOccurrences(of: "4", with: "")
-            .replacingOccurrences(of: "5", with: "")
-            .replacingOccurrences(of: "6", with: "")
-            .replacingOccurrences(of: "7", with: "")
-            .replacingOccurrences(of: "8", with: "")
-            .replacingOccurrences(of: "9", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let upper = cleaned.prefix(1).uppercased() + cleaned.dropFirst()
-
-        switch upper {
-        case "Db": return "C#"
-        case "Eb": return "D#"
-        case "Gb": return "F#"
-        case "Ab": return "G#"
-        case "Bb": return "A#"
-        case "Cb": return "B"
-        case "Fb": return "E"
-        case "E#": return "F"
-        case "B#": return "C"
-        default:
-            return upper
-        }
-    }
-}
 
     // MARK: - Scale Notes Mapping Helper
     private func scaleNoteStrings(for scale: Scale) -> [String] {

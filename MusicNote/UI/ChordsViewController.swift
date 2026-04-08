@@ -66,14 +66,9 @@ final class ChordsViewController: UIViewController {
     ]
     
     // MARK: - Input Mode
-    private enum PracticeInputMode {
-        case buttons
-        case piano
-    }
-    
-    private var inputMode: PracticeInputMode = .buttons
-    
-    private let inputToggleButton: UIButton = {
+    var inputMode: PracticeInputMode = .buttons
+
+    let inputToggleButton: UIButton = {
         let b = UIButton(type: .system)
         b.setTitle("🎹 Piano", for: .normal)
         b.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -81,8 +76,8 @@ final class ChordsViewController: UIViewController {
         b.applyLiquidGlass()
         return b
     }()
-    
-    private let pianoView = PianoKeyboardView()
+
+    let pianoView = PianoKeyboardView()
     
     // Data
     private var chords: [ChordPractice] = []
@@ -145,10 +140,7 @@ final class ChordsViewController: UIViewController {
         setupUI()
         loadNextChord()
 
-        // 🎹 Piano callback
-        pianoView.onNotePressed = { [weak self] note in
-            self?.handlePianoChordNote(note)
-        }
+        setupPianoCallbacks()
     }
     
     private func setupUI() {
@@ -187,7 +179,7 @@ final class ChordsViewController: UIViewController {
         }
         
         NSLayoutConstraint.activate([
-            practiceHeader.topAnchor.constraint(equalTo: view.topAnchor, constant: 64),
+            practiceHeader.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             practiceHeader.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             practiceHeader.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             
@@ -226,6 +218,8 @@ final class ChordsViewController: UIViewController {
             // Input toggle button and piano view
             inputToggleButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             inputToggleButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            inputToggleButton.heightAnchor.constraint(equalToConstant: 36),
+            inputToggleButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 110),
             
             pianoView.topAnchor.constraint(equalTo: imageContainer.bottomAnchor, constant: 24),
             pianoView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -263,68 +257,6 @@ final class ChordsViewController: UIViewController {
         return b
     }
     
-    // MARK: - Note Normalization (Piano ↔ Chord matching)
-    /// Converts note strings from different sources into a single canonical form.
-    /// - Strips octave numbers
-    /// - Normalizes ♯/♭ to #/b
-    /// - Trims whitespace
-    /// - Converts flats (Db, Eb, Gb, Ab, Bb) to sharps (C#, D#, F#, G#, A#)
-    /// - Handles common enharmonics (Cb, Fb, E#, B#)
-    private func normalize(_ note: String) -> String {
-        let cleaned = note
-            .replacingOccurrences(of: "♯", with: "#")
-            .replacingOccurrences(of: "♭", with: "b")
-            .replacingOccurrences(of: "0", with: "")
-            .replacingOccurrences(of: "1", with: "")
-            .replacingOccurrences(of: "2", with: "")
-            .replacingOccurrences(of: "3", with: "")
-            .replacingOccurrences(of: "4", with: "")
-            .replacingOccurrences(of: "5", with: "")
-            .replacingOccurrences(of: "6", with: "")
-            .replacingOccurrences(of: "7", with: "")
-            .replacingOccurrences(of: "8", with: "")
-            .replacingOccurrences(of: "9", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let upper = cleaned.prefix(1).uppercased() + cleaned.dropFirst()
-
-        switch upper {
-        case "Db": return "C#"
-        case "Eb": return "D#"
-        case "Gb": return "F#"
-        case "Ab": return "G#"
-        case "Bb": return "A#"
-        case "Cb": return "B"
-        case "Fb": return "E"
-        case "E#": return "F"
-        case "B#": return "C"
-        default:
-            return upper
-        }
-    }
-
-    private func canonicalize(_ note: String) -> String {
-        // Make sure letter is uppercase (e.g. "c#" -> "C#")
-        let n = note.isEmpty ? note : note.prefix(1).uppercased() + note.dropFirst()
-
-        // Convert common enharmonics to the sharp naming used by the on-screen keyboard.
-        switch n {
-        case "Db": return "C#"
-        case "Eb": return "D#"
-        case "Gb": return "F#"
-        case "Ab": return "G#"
-        case "Bb": return "A#"
-
-        case "Cb": return "B"
-        case "Fb": return "E"
-        case "E#": return "F"
-        case "B#": return "C"
-
-        default:
-            return n
-        }
-    }
-
     private func loadNextChord() {
         gotNumeralCorrect = false
         gotInversionCorrect = false
@@ -564,49 +496,7 @@ final class ChordsViewController: UIViewController {
     }
     // MARK: - Input Mode Actions
     @objc private func inputToggleTapped() {
-        if SubscriptionManager.shared.isPro ||
-            PianoUnlockManager.shared.isUnlockedToday {
-            
-            switchInputMode()
-            return
-        }
-        
-        RewardedAdManager.shared.show(
-            from: self,
-            onReward: { [weak self] in
-                PianoUnlockManager.shared.unlockForToday()
-                self?.switchInputMode()
-            },
-            onFail: { [weak self] in
-                let alert = UIAlertController(
-                    title: "Ad not ready",
-                    message: "Try again in a moment.",
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: "OK", style: .default))
-                self?.present(alert, animated: true)
-            }
-        )
-    }
-    
-    private func switchInputMode() {
-        if inputMode == .buttons {
-            inputMode = .piano
-            
-            numeralStack.isHidden = true
-            inversionStack.isHidden = true
-            pianoView.isHidden = false
-            
-            inputToggleButton.setTitle("🔘 Buttons", for: .normal)
-        } else {
-            inputMode = .buttons
-            
-            pianoView.isHidden = true
-            numeralStack.isHidden = false
-            inversionStack.isHidden = false
-            
-            inputToggleButton.setTitle("🎹 Piano", for: .normal)
-        }
+        handleInputToggleTapped()
     }
 // MARK: - Piano Chord Handler
 private func handlePianoChordNote(_ note: String) {
@@ -684,3 +574,9 @@ private extension ChordPractice {
     }
 }
 
+// MARK: - PianoInputHandling
+extension ChordsViewController: PianoInputHandling {
+    func pianoNotePressed(_ note: String) { handlePianoChordNote(note) }
+    func showPracticeButtons() { numeralStack.isHidden = false; inversionStack.isHidden = false }
+    func hidePracticeButtons() { numeralStack.isHidden = true; inversionStack.isHidden = true }
+}
